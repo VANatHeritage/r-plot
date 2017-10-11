@@ -7,6 +7,9 @@
 
 library(shiny)
 library(ggplot2)
+library(extrafont)
+library(scatterplot3d)
+loadfonts(device = "win")
 
 # ui
 ui <- fluidPage(
@@ -16,7 +19,8 @@ ui <- fluidPage(
       fileInput("d", label = "SCU CSV file"), 
       selectInput("br", label = "B-Rank selection", multiple = TRUE, choices = c("B1: Outstanding significance","B2: Very high significance","B3: High significance","B4: Moderate significance","B5: General significance"),
                   selected = c("B1: Outstanding significance","B2: Very high significance","B3: High significance","B4: Moderate significance","B5: General significance")),
-      selectInput("lab", label = "Select features to label:", choices = c(0), selected = c(0), multiple = TRUE)
+      selectInput("lab", label = "Select features to label:", choices = c(0), selected = c(0), multiple = TRUE),
+      checkboxInput("threedim", label = "3d plot?", value = FALSE)
     ),
     mainPanel(
       plotOutput("plot", brush = "plot_brush"),
@@ -39,7 +43,7 @@ server <- function(input, output, session) {
     if (is.null(file)) return(NULL)
     d <- read.csv(file$datapath)
     names(d) <- tolower(names(d))
-    d <- d[c("objectid","site_name","biodiv_sig","forwet_mean","impsur_mean", "lngid")]
+    d <- d[c("objectid","site_name","biodiv_sig","forwet_mean","impsur_mean", "lngid","vuln_mean")]
     d
   })
   
@@ -55,9 +59,9 @@ server <- function(input, output, session) {
   observe({
     if (!is.null(d()) && length(input$br) > 0) {
       d <- d1()
-      if (isolate(input$lab) == 0) samp <- sample(d$lngid,5) else samp <- isolate(input$lab)
+      if (!is.null(isolate(input$lab)) && isolate(input$lab) == 0) samp <- sample(d$lngid,5) else samp <- isolate(input$lab)
       updateSelectInput(session, inputId = "lab", choices = d$lngid, selected = samp[samp %in% d$lngid])
-    }
+      }
   })
   
   d2 <- reactive({
@@ -80,9 +84,10 @@ server <- function(input, output, session) {
   # plot all B-ranks
   
   output$plot <- renderPlot({
+    
     d <- as.data.frame(d2())
     dl <- dl()
-    
+  
     # automated blue->red points, blue-yellow-red bkgd
     color.pts<- colorRampPalette(c("blue1","firebrick"))
     color.pts<- color.pts(length(unique(d()$biodiv_sig)))
@@ -90,7 +95,9 @@ server <- function(input, output, session) {
     # background colors and alpha
     color.bkd <- c("grey90","grey75","grey60")
     alpha <- 0.5
-
+    
+    if (!input$threedim) {
+    
     ggplot(data = d) + 
       geom_rect(data = rects, aes(xmin=x1, xmax=x2, ymin=y1, ymax=y2, fill = factor(group)), alpha = alpha, show.legend = FALSE) +
       scale_fill_manual(values = color.bkd) + 
@@ -104,7 +111,8 @@ server <- function(input, output, session) {
       scale_shape_manual(name = "Stream Conservation Units\n Biodiversity Rank", values = c(1,1,2,0,6)[sort(as.numeric(unique(d$biodiv_sig)))]) +
       scale_size_manual(name = "Stream Conservation Units\n Biodiversity Rank", values = c(6,4,3,3,3)[sort(as.numeric(unique(d$biodiv_sig)))]) +
       # theme_dark() + 
-      theme(plot.title = element_text(size = 16, hjust = 0.5),
+      theme(text = element_text(family="Segoe UI"),
+        plot.title = element_text(size = 16, hjust = 0.5, family = "Segoe UI Semibold"),
             plot.margin = margin(rep(0.25,4), unit= "in"),
             legend.position = c(.85,.75),
             legend.title.align = 0.5,
@@ -123,6 +131,17 @@ server <- function(input, output, session) {
       xlab("\n% Forest or Wetland Cover in 250-m Flow Buffer") +
       ylab("% Impervious Surface in 250-m Flow Buffer\n") + 
       ggtitle("Stream Conservation Units and Landscape Integrity")
+      
+    } else {
+      scatterplot3d(x = d$forwet_mean, y = d$impsur_mean, z = d$vuln_mean, angle = 150,
+                    color = color.pts[as.integer(d$biodiv_sig)], pch = c(1,1,2,0,6)[as.integer(d$biodiv_sig)], 
+                    box = T,
+                    # type = "h", lty.hplot = 3,
+                    xlab = "\n% Forest or Wetland Cover in 250-m Flow Buffer", 
+                    ylab = "% Impervious Surface in 250-m Flow Buffer\n", 
+                    zlab = "Development vulnerability",
+                    main = "Stream Conservation Units and Landscape Integrity")
+    }
   }#, height = 800, width = 1100
   )
   
